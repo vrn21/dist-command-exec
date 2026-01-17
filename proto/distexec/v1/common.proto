@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package distexec.v1;
+
+option go_package = "dist-command-exec/gen/go/distexec/v1;distexecv1";
+
+// JobStatus represents the lifecycle state of a job.
+enum JobStatus {
+  JOB_STATUS_UNSPECIFIED = 0;
+  JOB_STATUS_PENDING = 1;
+  JOB_STATUS_RUNNING = 2;
+  JOB_STATUS_COMPLETED = 3;
+  JOB_STATUS_FAILED = 4;
+  JOB_STATUS_CANCELLED = 5;
+  JOB_STATUS_TIMEOUT = 6;
+}
+
+// ExecutionStatus represents the outcome of task execution on a worker.
+enum ExecutionStatus {
+  EXECUTION_STATUS_UNSPECIFIED = 0;
+  EXECUTION_STATUS_SUCCESS = 1;
+  EXECUTION_STATUS_FAILURE = 2;
+  EXECUTION_STATUS_TIMEOUT = 3;
+  EXECUTION_STATUS_CANCELLED = 4;
+}
+
+// WorkerHealth indicates the health state of a worker node.
+enum WorkerHealth {
+  WORKER_HEALTH_UNKNOWN = 0;
+  WORKER_HEALTH_HEALTHY = 1;
+  WORKER_HEALTH_DEGRADED = 2;
+  WORKER_HEALTH_UNHEALTHY = 3;
+}
+
+// NodeStatus represents the status of a registered worker node.
+enum NodeStatus {
+  NODE_STATUS_UNSPECIFIED = 0;
+  NODE_STATUS_HEALTHY = 1;
+  NODE_STATUS_UNHEALTHY = 2;
+  NODE_STATUS_DRAINING = 3;
+}
+
+// HeartbeatAction is an instruction from master to worker during heartbeat.
+enum HeartbeatAction {
+  HEARTBEAT_ACTION_NONE = 0;
+  HEARTBEAT_ACTION_DRAIN = 1;
+  HEARTBEAT_ACTION_SHUTDOWN = 2;
+}
+
+// OutputType distinguishes between stdout and stderr.
+enum OutputType {
+  OUTPUT_TYPE_STDOUT = 0;
+  OUTPUT_TYPE_STDERR = 1;
+}

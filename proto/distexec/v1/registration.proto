@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package distexec.v1;
+
+option go_package = "dist-command-exec/gen/go/distexec/v1;distexecv1";
+
+import "google/protobuf/duration.proto";
+import "distexec/v1/common.proto";
+
+// RegistrationService is used by workers to register and heartbeat with master.
+service RegistrationService {
+  // Register a new worker node.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Deregister (graceful shutdown).
+  rpc Deregister(DeregisterRequest) returns (DeregisterResponse);
+
+  // Periodic heartbeat.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+}
+
+message RegisterRequest {
+  // Preferably pod name in K8s.
+  string worker_id = 1;
+  // "host:port" where worker listens.
+  string address = 2;
+  // Supported executor types.
+  repeated string capabilities = 3;
+  int32 max_concurrent_tasks = 4;
+  // For affinity (e.g., "zone": "us-east-1a").
+  map<string, string> labels = 5;
+}
+
+message RegisterResponse {
+  bool accepted = 1;
+  string message = 2;
+  // How often to heartbeat.
+  google.protobuf.Duration heartbeat_interval = 3;
+}
+
+message DeregisterRequest {
+  string worker_id = 1;
+}
+
+message DeregisterResponse {
+  bool acknowledged = 1;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  int32 active_tasks = 2;
+  WorkerHealth health = 3;
+  // Optional: CPU, memory, etc.
+  map<string, string> metrics = 4;
+}
+
+message HeartbeatResponse {
+  bool acknowledged = 1;
+  // Master can send instructions back.
+  HeartbeatAction action = 2;
+}

@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package distexec.v1;
+
+option go_package = "dist-command-exec/gen/go/distexec/v1;distexecv1";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "distexec/v1/common.proto";
+
+// MasterService is the API for clients to submit and monitor jobs.
+service MasterService {
+  // Submit a new execution task.
+  rpc Submit(SubmitRequest) returns (SubmitResponse);
+
+  // Get status of a submitted job.
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+  // Cancel a running or pending job.
+  rpc Cancel(CancelRequest) returns (CancelResponse);
+
+  // List jobs with optional filtering.
+  rpc ListJobs(ListJobsRequest) returns (ListJobsResponse);
+
+  // Stream job output in real-time.
+  rpc StreamOutput(StreamOutputRequest) returns (stream OutputChunk);
+}
+
+message SubmitRequest {
+  // Task type, e.g., "command".
+  string task_type = 1;
+  // Task-specific payload (JSON encoded).
+  bytes payload = 2;
+  // Maximum execution time.
+  google.protobuf.Duration timeout = 3;
+  // Priority (0-10, higher = more urgent).
+  int32 priority = 4;
+  // Arbitrary metadata.
+  map<string, string> metadata = 5;
+}
+
+message SubmitResponse {
+  // Unique job identifier.
+  string job_id = 1;
+}
+
+message GetStatusRequest {
+  string job_id = 1;
+}
+
+message GetStatusResponse {
+  string job_id = 1;
+  JobStatus status = 2;
+  // Available output so far.
+  bytes output = 3;
+  // Error message if failed.
+  string error = 4;
+  // Exit code for command tasks.
+  int32 exit_code = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp started_at = 7;
+  google.protobuf.Timestamp completed_at = 8;
+  // Which worker is/was executing.
+  string worker_id = 9;
+}
+
+message CancelRequest {
+  string job_id = 1;
+}
+
+message CancelResponse {
+  bool cancelled = 1;
+  string message = 2;
+}
+
+message ListJobsRequest {
+  // Max jobs to return.
+  int32 limit = 1;
+  // Pagination offset.
+  int32 offset = 2;
+  // Filter by status (0 = all).
+  JobStatus status_filter = 3;
+}
+
+message ListJobsResponse {
+  repeated JobSummary jobs = 1;
+  // Total matching jobs.
+  int32 total = 2;
+}
+
+message JobSummary {
+  string job_id = 1;
+  string task_type = 2;
+  JobStatus status = 3;
+  google.protobuf.Timestamp created_at = 4;
+}
+
+message StreamOutputRequest {
+  string job_id = 1;
+}
+
+message OutputChunk {
+  bytes data = 1;
+  OutputType type = 2;
+}

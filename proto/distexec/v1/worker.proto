@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package distexec.v1;
+
+option go_package = "dist-command-exec/gen/go/distexec/v1;distexecv1";
+
+import "google/protobuf/duration.proto";
+import "distexec/v1/common.proto";
+
+// WorkerService is called by master to dispatch tasks to workers.
+service WorkerService {
+  // Execute a task on this worker.
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+
+  // Execute with streaming output.
+  rpc ExecuteStream(ExecuteRequest) returns (stream ExecuteProgress);
+
+  // Cancel a running task.
+  rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
+
+  // Check worker health and capacity.
+  rpc GetWorkerStatus(GetWorkerStatusRequest) returns (GetWorkerStatusResponse);
+}
+
+message ExecuteRequest {
+  string task_id = 1;
+  // Task type, e.g., "command".
+  string task_type = 2;
+  // Task-specific payload (JSON encoded).
+  bytes payload = 3;
+  // Maximum execution time.
+  google.protobuf.Duration timeout = 4;
+  // Arbitrary metadata.
+  map<string, string> metadata = 5;
+}
+
+message ExecuteResponse {
+  string task_id = 1;
+  ExecutionStatus status = 2;
+  bytes output = 3;
+  string error = 4;
+  int32 exit_code = 5;
+  google.protobuf.Duration duration = 6;
+}
+
+message ExecuteProgress {
+  enum ProgressType {
+    PROGRESS_STARTED = 0;
+    PROGRESS_OUTPUT = 1;
+    PROGRESS_COMPLETED = 2;
+    PROGRESS_ERROR = 3;
+  }
+  ProgressType type = 1;
+  // Output data for PROGRESS_OUTPUT.
+  bytes data = 2;
+  // Populated for PROGRESS_COMPLETED.
+  ExecuteResponse final_result = 3;
+}
+
+message CancelTaskRequest {
+  string task_id = 1;
+}
+
+message CancelTaskResponse {
+  bool cancelled = 1;
+}
+
+message GetWorkerStatusRequest {}
+
+message GetWorkerStatusResponse {
+  string worker_id = 1;
+  repeated string capabilities = 2;
+  int32 max_concurrent_tasks = 3;
+  int32 active_tasks = 4;
+  WorkerHealth health = 5;
+}
