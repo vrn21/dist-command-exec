@@ -78,7 +78,7 @@ func NewServer(cfg config.Master) (*Server, error) {
 		scaler = NewAutoScaler(registry, scalerCfg)
 	}
 
-	dispatcher := NewDispatcher(registry, scheduler, balancer, scaler, DispatcherConfig{
+	dispatcher := NewDispatcher(registry, scheduler, balancer, scaler, store, DispatcherConfig{
 		TaskTimeout: 30 * time.Second,
 		RetryDelay:  1 * time.Second,
 		MaxRetries:  3,

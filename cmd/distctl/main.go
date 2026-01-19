@@ -49,11 +49,16 @@ func runCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run [command] [args...]",
 		Short: "Submit a command for execution",
-		Long:  "Submit a shell command to be executed on a worker node.",
-		Args:  cobra.MinimumNArgs(1),
+		Long: `Submit a shell command to be executed on a worker node.
+
+Use -- to pass arguments that start with dashes:
+  distctl run -- sh -c "echo hello"`,
+		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCommand(args[0], args[1:])
 		},
+		// Allow -- to separate distctl flags from command args
+		DisableFlagsInUseLine: true,
 	}
 
 	cmd.Flags().DurationVarP(&timeout, "timeout", "t", 30*time.Second, "Command timeout")

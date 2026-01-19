@@ -21,6 +21,7 @@ type Dispatcher struct {
 	scheduler *Scheduler
 	balancer  LoadBalancer
 	scaler    *AutoScaler
+	store     *Store
 
 	// gRPC client pool
 	mu      sync.RWMutex
@@ -41,7 +42,7 @@ type DispatcherConfig struct {
 }
 
 // NewDispatcher creates a new task dispatcher.
-func NewDispatcher(registry *NodeRegistry, scheduler *Scheduler, balancer LoadBalancer, scaler *AutoScaler, cfg DispatcherConfig) *Dispatcher {
+func NewDispatcher(registry *NodeRegistry, scheduler *Scheduler, balancer LoadBalancer, scaler *AutoScaler, store *Store, cfg DispatcherConfig) *Dispatcher {
 	if cfg.TaskTimeout <= 0 {
 		cfg.TaskTimeout = 30 * time.Second
 	}
@@ -57,6 +58,7 @@ func NewDispatcher(registry *NodeRegistry, scheduler *Scheduler, balancer LoadBa
 		scheduler:   scheduler,
 		balancer:    balancer,
 		scaler:      scaler,
+		store:       store,
 		clients:     make(map[string]pb.WorkerServiceClient),
 		conns:       make(map[string]*grpc.ClientConn),
 		taskTimeout: cfg.TaskTimeout,
@@ -121,6 +123,7 @@ func (d *Dispatcher) dispatchTask(ctx context.Context, task *types.Task) {
 			Msg("dispatch failed")
 
 		d.scheduler.MarkFailed(task.ID, err)
+		d.store.UpdateJobStatus(task.ID, types.TaskStatusFailed)
 
 		// Retry if possible
 		if task.CanRetry() {
@@ -132,7 +135,8 @@ func (d *Dispatcher) dispatchTask(ctx context.Context, task *types.Task) {
 		return
 	}
 
-	// Mark complete
+	// Save result to store and mark complete in scheduler
+	d.store.SaveResult(result)
 	d.scheduler.MarkComplete(task.ID, result)
 	d.registry.DecrementActiveTasks(node.ID)
 
