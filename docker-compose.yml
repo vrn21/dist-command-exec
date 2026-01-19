@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  master:
+    build:
+      context: .
+      dockerfile: Dockerfile.master
+    container_name: dist-exec-master
+    ports:
+      - "50051:50051"
+    environment:
+      - MASTER_ADDRESS=:50051
+      - LOG_LEVEL=debug
+      - MAX_CONCURRENT_JOBS=10000
+      - HEARTBEAT_TIMEOUT_SECONDS=15
+      - SCALING_ENABLED=false
+    healthcheck:
+      test: ["CMD", "/bin/grpc_health_probe", "-addr=:50051"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - dist-exec
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      - MASTER_ADDRESS=master:50051
+      - WORKER_ADDRESS=:50052
+      - MAX_CONCURRENT_TASKS=10
+      - LOG_LEVEL=debug
+    depends_on:
+      master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/grpc_health_probe", "-addr=:50052"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - dist-exec
+
+networks:
+  dist-exec:
+    driver: bridge

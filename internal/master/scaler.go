@@ -2,25 +2,28 @@ package master
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 // AutoScaler manages worker node scaling.
-// In production, this would call the Kubernetes API.
-// For local development, this is a no-op or mock implementation.
+// In production with K8s client, this calls the Kubernetes API.
+// For local development (k8s == nil), this is a no-op.
 type AutoScaler struct {
-	registry *NodeRegistry
-	cfg      ScalerConfig
+	registry   *NodeRegistry
+	cfg        ScalerConfig
+	k8s        *kubernetes.Clientset
+	namespace  string
+	deployment string
 
 	mu          sync.Mutex
 	lastScaleUp time.Time
 	enabled     bool
-
-	// K8s API client would go here
-	// k8s *kubernetes.Clientset
 }
 
 // ScalerConfig holds auto-scaler configuration.
@@ -60,12 +63,24 @@ func DefaultScalerConfig() ScalerConfig {
 	}
 }
 
-// NewAutoScaler creates a new auto-scaler.
+// NewAutoScaler creates a new auto-scaler without K8s client (for local dev).
 func NewAutoScaler(registry *NodeRegistry, cfg ScalerConfig) *AutoScaler {
 	return &AutoScaler{
 		registry: registry,
 		cfg:      cfg,
 		enabled:  cfg.Enabled,
+	}
+}
+
+// NewAutoScalerWithK8s creates a new auto-scaler with K8s client (for production).
+func NewAutoScalerWithK8s(registry *NodeRegistry, cfg ScalerConfig, k8s *kubernetes.Clientset, namespace, deployment string) *AutoScaler {
+	return &AutoScaler{
+		registry:   registry,
+		cfg:        cfg,
+		k8s:        k8s,
+		namespace:  namespace,
+		deployment: deployment,
+		enabled:    cfg.Enabled && k8s != nil,
 	}
 }
 
@@ -119,23 +134,47 @@ func (s *AutoScaler) EnsureCapacity(ctx context.Context, pendingTasks int) error
 	return nil
 }
 
-// scaleUp adds N workers.
+// scaleUp adds N workers by updating the deployment.
 func (s *AutoScaler) scaleUp(ctx context.Context, count int) error {
-	// In production: call Kubernetes API
-	// For now: just log the intent
-	log.Info().Int("count", count).Msg("would scale up workers (mock)")
+	if s.k8s == nil {
+		// Local dev mode: just log the intent
+		log.Info().Int("count", count).Msg("would scale up workers (mock mode)")
+		s.lastScaleUp = time.Now()
+		return nil
+	}
+
+	// Get current deployment
+	deploy, err := s.k8s.AppsV1().Deployments(s.namespace).Get(
+		ctx, s.deployment, metav1.GetOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("get deployment: %w", err)
+	}
+
+	// Calculate new replica count
+	currentReplicas := int32(0)
+	if deploy.Spec.Replicas != nil {
+		currentReplicas = *deploy.Spec.Replicas
+	}
+	newReplicas := currentReplicas + int32(count)
+	if newReplicas > int32(s.cfg.MaxReplicas) {
+		newReplicas = int32(s.cfg.MaxReplicas)
+	}
+
+	// Update deployment
+	deploy.Spec.Replicas = &newReplicas
+	_, err = s.k8s.AppsV1().Deployments(s.namespace).Update(
+		ctx, deploy, metav1.UpdateOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("update deployment: %w", err)
+	}
+
 	s.lastScaleUp = time.Now()
-
-	// Production implementation would look like:
-	// deploy, err := s.k8s.AppsV1().Deployments(s.namespace).Get(ctx, s.deployment, metav1.GetOptions{})
-	// if err != nil {
-	//     return fmt.Errorf("get deployment: %w", err)
-	// }
-	// newReplicas := *deploy.Spec.Replicas + int32(count)
-	// deploy.Spec.Replicas = &newReplicas
-	// _, err = s.k8s.AppsV1().Deployments(s.namespace).Update(ctx, deploy, metav1.UpdateOptions{})
-	// return err
-
+	log.Info().
+		Int32("old_replicas", currentReplicas).
+		Int32("new_replicas", newReplicas).
+		Msg("scaled up workers")
 	return nil
 }
 
@@ -166,20 +205,76 @@ func (s *AutoScaler) ScaleDown(ctx context.Context) error {
 
 	// If more than half are idle, scale down by 1
 	if idleCount > currentReplicas/2 {
-		log.Info().
-			Int("idle_workers", idleCount).
-			Int("current_workers", currentReplicas).
-			Msg("would scale down workers (mock)")
-		// Production: update deployment replicas
+		targetReplicas := currentReplicas - 1
+		if targetReplicas < s.cfg.MinReplicas {
+			targetReplicas = s.cfg.MinReplicas
+		}
+
+		if s.k8s == nil {
+			// Local dev mode: just log
+			log.Info().
+				Int("idle_workers", idleCount).
+				Int("current_workers", currentReplicas).
+				Int("target_workers", targetReplicas).
+				Msg("would scale down workers (mock mode)")
+			return nil
+		}
+
+		return s.setReplicas(ctx, targetReplicas)
 	}
 
+	return nil
+}
+
+// setReplicas sets the deployment to the specified replica count.
+func (s *AutoScaler) setReplicas(ctx context.Context, replicas int) error {
+	if s.k8s == nil {
+		return nil
+	}
+
+	deploy, err := s.k8s.AppsV1().Deployments(s.namespace).Get(
+		ctx, s.deployment, metav1.GetOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("get deployment: %w", err)
+	}
+
+	newReplicas := int32(replicas)
+	deploy.Spec.Replicas = &newReplicas
+
+	_, err = s.k8s.AppsV1().Deployments(s.namespace).Update(
+		ctx, deploy, metav1.UpdateOptions{},
+	)
+	if err != nil {
+		return fmt.Errorf("update deployment: %w", err)
+	}
+
+	log.Info().
+		Int("replicas", replicas).
+		Msg("scaled down workers")
 	return nil
 }
 
 // GetCurrentScale returns current and desired replica count.
 func (s *AutoScaler) GetCurrentScale(ctx context.Context) (current, desired int, err error) {
 	current = s.registry.HealthyNodeCount()
-	desired = current // In mock mode, desired == current
+
+	if s.k8s == nil {
+		// Mock mode: desired == current
+		return current, current, nil
+	}
+
+	deploy, err := s.k8s.AppsV1().Deployments(s.namespace).Get(
+		ctx, s.deployment, metav1.GetOptions{},
+	)
+	if err != nil {
+		return current, current, fmt.Errorf("get deployment: %w", err)
+	}
+
+	if deploy.Spec.Replicas != nil {
+		desired = int(*deploy.Spec.Replicas)
+	}
+
 	return current, desired, nil
 }
 
@@ -187,7 +282,7 @@ func (s *AutoScaler) GetCurrentScale(ctx context.Context) (current, desired int,
 func (s *AutoScaler) SetEnabled(enabled bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.enabled = enabled
+	s.enabled = enabled && (s.k8s != nil || !enabled)
 }
 
 // min returns the smaller of two ints.

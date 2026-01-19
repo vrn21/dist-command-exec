@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dist-exec-worker
+  namespace: default
+  labels:
+    app: dist-exec-worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: dist-exec-worker
+  template:
+    metadata:
+      labels:
+        app: dist-exec-worker
+    spec:
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: dist-exec-worker:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 50052
+              protocol: TCP
+          env:
+            - name: MASTER_ADDRESS
+              value: "dist-exec-master:50051"
+            - name: WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: WORKER_ADDRESS
+              value: ":50052"
+            - name: MAX_CONCURRENT_TASKS
+              value: "10"
+            - name: LOG_LEVEL
+              value: "info"
+          readinessProbe:
+            exec:
+              command: ["/bin/grpc_health_probe", "-addr=:50052"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/bin/grpc_health_probe", "-addr=:50052"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "256Mi"
+            limits:
+              cpu: "2"
+              memory: "1Gi"
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep 5"]

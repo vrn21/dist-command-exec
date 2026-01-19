@@ -15,6 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 
 	pb "dist-command-exec/gen/go/distexec/v1"
 	"dist-command-exec/internal/config"
@@ -47,7 +49,34 @@ func NewServer(cfg config.Master) (*Server, error) {
 	scheduler := NewScheduler(cfg.MaxConcurrentJobs)
 	balancer := NewRoundRobinBalancer()
 	store := NewStore()
-	scaler := NewAutoScaler(registry, DefaultScalerConfig())
+
+	// Setup auto-scaler
+	scalerCfg := DefaultScalerConfig()
+	scalerCfg.Enabled = cfg.ScalingEnabled
+
+	var scaler *AutoScaler
+	if cfg.ScalingEnabled {
+		// Initialize K8s client for in-cluster use
+		k8sConfig, err := rest.InClusterConfig()
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to get in-cluster K8s config, scaling disabled")
+			scaler = NewAutoScaler(registry, scalerCfg)
+		} else {
+			k8sClient, err := kubernetes.NewForConfig(k8sConfig)
+			if err != nil {
+				log.Warn().Err(err).Msg("failed to create K8s client, scaling disabled")
+				scaler = NewAutoScaler(registry, scalerCfg)
+			} else {
+				log.Info().
+					Str("namespace", cfg.K8sNamespace).
+					Str("deployment", cfg.WorkerDeployment).
+					Msg("K8s auto-scaler enabled")
+				scaler = NewAutoScalerWithK8s(registry, scalerCfg, k8sClient, cfg.K8sNamespace, cfg.WorkerDeployment)
+			}
+		}
+	} else {
+		scaler = NewAutoScaler(registry, scalerCfg)
+	}
 
 	dispatcher := NewDispatcher(registry, scheduler, balancer, scaler, DispatcherConfig{
 		TaskTimeout: 30 * time.Second,
@@ -95,6 +124,24 @@ func (s *Server) Run(ctx context.Context) error {
 	// Start background workers
 	go s.dispatcher.Run(ctx)
 	go s.registry.MonitorHealth(ctx)
+
+	// Start periodic scale-down (every 5 minutes)
+	if s.scaler != nil {
+		go func() {
+			ticker := time.NewTicker(5 * time.Minute)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := s.scaler.ScaleDown(ctx); err != nil {
+						log.Warn().Err(err).Msg("scale down failed")
+					}
+				}
+			}
+		}()
+	}
 
 	// Handle shutdown
 	go func() {

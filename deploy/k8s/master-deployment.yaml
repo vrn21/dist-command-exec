@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dist-exec-master
+  namespace: default
+  labels:
+    app: dist-exec-master
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dist-exec-master
+  template:
+    metadata:
+      labels:
+        app: dist-exec-master
+    spec:
+      serviceAccountName: dist-exec-master
+      containers:
+        - name: master
+          image: dist-exec-master:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 50051
+              protocol: TCP
+          env:
+            - name: MASTER_ADDRESS
+              value: ":50051"
+            - name: LOG_LEVEL
+              value: "info"
+            - name: MAX_CONCURRENT_JOBS
+              value: "10000"
+            - name: HEARTBEAT_TIMEOUT_SECONDS
+              value: "15"
+            - name: SCALING_ENABLED
+              value: "true"
+            - name: K8S_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: WORKER_DEPLOYMENT
+              value: "dist-exec-worker"
+          readinessProbe:
+            exec:
+              command: ["/bin/grpc_health_probe", "-addr=:50051"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/bin/grpc_health_probe", "-addr=:50051"]
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
