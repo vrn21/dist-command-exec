@@ -1,0 +1,11 @@
+# Sample DistributedJob to test the operator
+apiVersion: distexec.io/v1
+kind: DistributedJob
+metadata:
+  name: hello-world
+  namespace: default
+spec:
+  command: "echo"
+  args: ["Hello from distributed job!"]
+  parallelism: 3
+  timeout: "30s"

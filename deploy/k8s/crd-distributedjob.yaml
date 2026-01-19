@@ -1,0 +1,107 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: distributedjobs.distexec.io
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.14.0
+spec:
+  group: distexec.io
+  names:
+    kind: DistributedJob
+    listKind: DistributedJobList
+    plural: distributedjobs
+    singular: distributedjob
+    shortNames:
+      - dj
+      - djob
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Completions
+          type: integer
+          jsonPath: .status.completions
+        - name: Parallelism
+          type: integer
+          jsonPath: .spec.parallelism
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          description: DistributedJob runs a command across distributed workers.
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - command
+              properties:
+                command:
+                  type: string
+                  description: Command to execute
+                args:
+                  type: array
+                  items:
+                    type: string
+                  description: Command arguments
+                parallelism:
+                  type: integer
+                  format: int32
+                  default: 1
+                  minimum: 1
+                  maximum: 100
+                  description: Number of parallel tasks
+                timeout:
+                  type: string
+                  default: "30s"
+                  description: Timeout duration (e.g., 30s, 5m, 1h)
+                workingDir:
+                  type: string
+                  description: Working directory
+                env:
+                  type: object
+                  additionalProperties:
+                    type: string
+                  description: Environment variables
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum:
+                    - Pending
+                    - Running
+                    - Succeeded
+                    - Failed
+                startTime:
+                  type: string
+                  format: date-time
+                completionTime:
+                  type: string
+                  format: date-time
+                completions:
+                  type: integer
+                  format: int32
+                failed:
+                  type: integer
+                  format: int32
+                message:
+                  type: string
+                taskIds:
+                  type: array
+                  items:
+                    type: string
