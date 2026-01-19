@@ -30,9 +30,19 @@ func main() {
 		Str("master", cfg.MasterAddress).
 		Msg("starting worker node")
 
-	// Build executor registry
+	// Build executor registry from configuration
 	registry := executor.NewRegistry()
-	registry.Register(executor.NewCommandExecutor())
+	if cfg.Executors.Command.Enabled {
+		cmdExec := executor.NewCommandExecutorWithLimits(
+			cfg.Executors.Command.AllowedCommandsList(),
+			cfg.Executors.Command.BlockedCommandsList(),
+		)
+		registry.Register(cmdExec)
+		log.Debug().
+			Strs("allowed", cfg.Executors.Command.AllowedCommandsList()).
+			Strs("blocked", cfg.Executors.Command.BlockedCommandsList()).
+			Msg("registered command executor")
+	}
 
 	// Create server
 	srv, err := worker.NewServer(cfg, registry)

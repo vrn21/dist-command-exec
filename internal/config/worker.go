@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"github.com/kelseyhightower/envconfig"
 )
@@ -25,6 +26,53 @@ type Worker struct {
 
 	// LogLevel is the logging level.
 	LogLevel string `envconfig:"LOG_LEVEL" default:"info"`
+
+	// Executors is the executor configuration.
+	Executors ExecutorConfig
+}
+
+// ExecutorConfig holds configuration for all executors.
+type ExecutorConfig struct {
+	Command CommandExecutorConfig
+}
+
+// CommandExecutorConfig holds configuration for the command executor.
+type CommandExecutorConfig struct {
+	// Enabled controls whether the command executor is registered.
+	Enabled bool `envconfig:"EXECUTOR_COMMAND_ENABLED" default:"true"`
+
+	// AllowedCommands is a comma-separated list of allowed commands.
+	// If empty, all commands are allowed (unless blocked).
+	AllowedCommands string `envconfig:"EXECUTOR_COMMAND_ALLOWED"`
+
+	// BlockedCommands is a comma-separated list of blocked commands.
+	BlockedCommands string `envconfig:"EXECUTOR_COMMAND_BLOCKED"`
+}
+
+// AllowedCommandsList returns the allowed commands as a slice.
+func (c *CommandExecutorConfig) AllowedCommandsList() []string {
+	return splitCSV(c.AllowedCommands)
+}
+
+// BlockedCommandsList returns the blocked commands as a slice.
+func (c *CommandExecutorConfig) BlockedCommandsList() []string {
+	return splitCSV(c.BlockedCommands)
+}
+
+// splitCSV splits a comma-separated string into a slice.
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
 // LoadWorker loads worker configuration from environment variables.
